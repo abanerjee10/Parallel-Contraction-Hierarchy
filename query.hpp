@@ -24,6 +24,7 @@ struct PchQuery {
   pair<EdgeTy, int> stVerifier(NodeId s, NodeId t);
   pair<EdgeTy, int> stQuery(NodeId s, NodeId t);
   sequence<EdgeTy> ssspQuery(NodeId s, bool remap, bool in_parallel);
+  void insertionQuery(int ins_score, EdgeTy* edit_scores, sequence<NodeId> &contracted_to_og);
 
   // for testing
   void make_inverse();
@@ -337,4 +338,28 @@ sequence<EdgeTy> PchQuery::ssspQuery(NodeId s, bool remap = true,
     return mapping_dist;
   }
   return dist;
+}
+void PchQuery::insertionQuery(int ins_score, EdgeTy* edit_scores, sequence<NodeId> &contracted_to_og) {
+  for (size_t i = 0; i < GC.layer; i++) {
+    parallel_for(GC.layerOffset[i], GC.layerOffset[i + 1], [&](size_t k) {
+      for (size_t j = GC.offset[k]; j < GC.offset[k + 1]; j++) {
+        NodeId v = GC.E[j].v;
+        EdgeTy w = GC.E[j].w;
+        if (edit_scores[contracted_to_og[v]] > edit_scores[contracted_to_og[k]] + w * ins_score) {
+          edit_scores[contracted_to_og[v]] = edit_scores[contracted_to_og[k]] + w * ins_score;
+        }
+      }
+    });
+  }
+  for (size_t i = GC.layer-1; i < GC.layer; i--) {
+    parallel_for(GC.layerOffset[i], GC.layerOffset[i + 1], [&](size_t k) {
+      for (size_t j = GC.in_offset[k]; j < GC.in_offset[k + 1]; j++) {
+        NodeId v = GC.in_E[j].v;
+        EdgeTy w = GC.in_E[j].w;
+        if (edit_scores[contracted_to_og[k]] > edit_scores[contracted_to_og[v]] + w * ins_score) {
+          edit_scores[contracted_to_og[k]] = edit_scores[contracted_to_og[v]] + w * ins_score;
+        }
+      }
+    });
+  }
 }

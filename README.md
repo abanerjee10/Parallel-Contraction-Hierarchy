@@ -6,8 +6,8 @@ This repository includes the implmentation of parallel contaction hierarchy.
 ## Developing 
 
 ### Prerequisites 
-* g++ &gt;= 7 with support for Cilk Plus and C++17 (It is tested with g++ 7.5.0) 
-
+* g++ or clang with C++17 features support (tested with clang 16.0.6 and g++ 14.2.1) on Linux machines.
+* We use [ParlayLib](https://github.com/cmuparlay/parlaylib) to support fork-join parallelism and some parallel primitives. It is provided as a submodule in our repository. 
 ### Setting up 
 Clone the library with submodule 
 ```shell
@@ -62,4 +62,18 @@ The application can auto-detect the format of the input graph based on the suffi
 For example, for a origin_graph ORIGIN_GRAPH and its corresponding ch_graph CH_GRAPH, if you want to run st query 20 times and sssp query 40 times, you can run:
 ```shell
 ./query ORIGIN_GRAPH CH_GRAPH 20 40
+```
+
+Reference
+--------
+Zijin Wan, Xiaojun Dong, Letong Wang, Enzuo zhu, Yan Gu and Yihan Sun. [*Parallel Contraction Hierarchies Can Be Efficient and Scalable*](https://arxiv.org/abs/2412.18008). To appear in International Conference on Supercomputing (ICS), 2025
+
+If you use our code, please cite our paper:
+```
+@inproceedings{wan2025parallel,
+  author    = {Wan, Zijin and Dong, Xiaojun and Wang, Letong and Zhu, Enzuo and Gu, Yan and Sun, Yihan},
+  title     = {Parallel Contraction Hierarchies Can Be Efficient and Scalable},
+  booktitle = {International Conference on Supercomputing (ICS)},
+  year      = {2025}
+}
 ```

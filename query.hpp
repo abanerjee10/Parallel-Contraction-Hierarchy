@@ -1,5 +1,22 @@
 #include "graph.hpp"
 
+template<typename LogScore>
+// use pass by value for prev_value so original isn't modified
+inline bool cas_update(LogScore* target, LogScore prev_value, LogScore &new_value) {
+  while (new_value < prev_value) {
+    LogScore old_value = prev_value;
+    // Use __atomic_compare_exchange for CAS operation
+    bool success = __atomic_compare_exchange(target, &old_value, &new_value, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+    if (success) {
+        return true; // Update successful
+    } else {
+        prev_value = *target;
+        new_value = std::min(new_value, prev_value);
+    }
+  }
+  return false; // Update unsuccessful
+}
+
 struct PchQuery {
   size_t n;
   const PchGraph &GC;
@@ -24,8 +41,12 @@ struct PchQuery {
   pair<EdgeTy, int> stVerifier(NodeId s, NodeId t);
   pair<EdgeTy, int> stQuery(NodeId s, NodeId t);
   sequence<EdgeTy> ssspQuery(NodeId s, bool remap, bool in_parallel);
-  void insertionQuery(int ins_score, EdgeTy* edit_scores, sequence<NodeId> &contracted_to_og);
-
+  template<typename LogScore>
+  void insertionCharQueryLayerParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og);
+  template<typename LogScore>
+  void insertionCharQueryComponentParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og);
+  template<typename LogScore>
+  void insertionCharQueryNestedParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og);
   // for testing
   void make_inverse();
 };
@@ -339,27 +360,91 @@ sequence<EdgeTy> PchQuery::ssspQuery(NodeId s, bool remap = true,
   }
   return dist;
 }
-void PchQuery::insertionQuery(int ins_score, EdgeTy* edit_scores, sequence<NodeId> &contracted_to_og) {
-  for (size_t i = 0; i < GC.layer; i++) {
-    parallel_for(GC.layerOffset[i], GC.layerOffset[i + 1], [&](size_t k) {
-      for (size_t j = GC.offset[k]; j < GC.offset[k + 1]; j++) {
+
+template<typename LogScore>
+void PchQuery::insertionCharQueryComponentParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og) {
+  // there are GC.ccOffset.size()-1 connected components
+  parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
+    for(NodeId u = GC.layerOffset[GC.ccOffset[cc]]; u < GC.layerOffset[GC.ccOffset[cc+1]]; u++) {
+      NodeId u_og = contracted_to_og[u];
+      // skipping parallelism on inner loop, will benchmark nested parallelism and load balancing later
+      for (size_t j = GC.offset[u]; j < GC.offset[u + 1]; j++) {
         NodeId v = GC.E[j].v;
+        NodeId v_og = contracted_to_og[v];
         EdgeTy w = GC.E[j].w;
-        if (edit_scores[contracted_to_og[v]] > edit_scores[contracted_to_og[k]] + w * ins_score) {
-          edit_scores[contracted_to_og[v]] = edit_scores[contracted_to_og[k]] + w * ins_score;
-        }
+        edit_scores[v_og] = std::min(edit_scores[v_og], edit_scores[u_og] + w * ins_score);
       }
-    });
-  }
-  for (size_t i = GC.layer-1; i < GC.layer; i--) {
-    parallel_for(GC.layerOffset[i], GC.layerOffset[i + 1], [&](size_t k) {
-      for (size_t j = GC.in_offset[k]; j < GC.in_offset[k + 1]; j++) {
+    }
+    for (NodeId u = GC.layerOffset[GC.ccOffset[cc+1]]; u-- > GC.layerOffset[GC.ccOffset[cc]]; ) {
+      NodeId u_og = contracted_to_og[u];
+      for (size_t j = GC.in_offset[u]; j < GC.in_offset[u + 1]; j++) {
         NodeId v = GC.in_E[j].v;
+        NodeId v_og = contracted_to_og[v];
         EdgeTy w = GC.in_E[j].w;
-        if (edit_scores[contracted_to_og[k]] > edit_scores[contracted_to_og[v]] + w * ins_score) {
-          edit_scores[contracted_to_og[k]] = edit_scores[contracted_to_og[v]] + w * ins_score;
-        }
+        edit_scores[u_og] = std::min(edit_scores[u_og], edit_scores[v_og] + w * ins_score);
       }
-    });
-  }
+    }
+  });
+}
+
+template<typename LogScore>
+void PchQuery::insertionCharQueryLayerParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og) {
+  // there are GC.ccOffset.size()-1 connected components
+  for(NodeId cc = 0; cc < GC.ccOffset.size()-1; cc++) {
+    for(NodeId u = GC.layerOffset[GC.ccOffset[cc]]; u < GC.layerOffset[GC.ccOffset[cc+1]]; u++) {
+      NodeId u_og = contracted_to_og[u];
+      parallel_for(GC.offset[u], GC.offset[u + 1], [&](NodeId j){
+        NodeId v = GC.E[j].v;
+        NodeId v_og = contracted_to_og[v];
+        EdgeTy w = GC.E[j].w;
+        LogScore prev_edits = edit_scores[v_og];
+        LogScore new_edits = edit_scores[u_og] + w * ins_score;
+        cas_update<LogScore>(&edit_scores[v_og], prev_edits, new_edits);
+      });
+    }
+    for (NodeId u = GC.layerOffset[GC.ccOffset[cc+1]]; u-- > GC.layerOffset[GC.ccOffset[cc]]; ) {
+      NodeId u_og = contracted_to_og[u];
+      parallel_for(GC.offset[u], GC.offset[u + 1], [&](NodeId j) {
+        NodeId v = GC.in_E[j].v;
+        NodeId v_og = contracted_to_og[v];
+        EdgeTy w = GC.in_E[j].w;
+        LogScore prev_edits = edit_scores[u_og];
+        LogScore new_edits = edit_scores[v_og] + w * ins_score;
+        cas_update<LogScore>(&edit_scores[u_og], prev_edits, new_edits);
+      });
+    }
+  };
+}
+
+template<typename LogScore>
+void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og) {
+  // there are GC.ccOffset.size()-1 connected components
+  parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
+    for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {
+      parallel_for(GC.layerOffset[layer], GC.layerOffset[layer+1], [&](NodeId u){
+        NodeId u_og = contracted_to_og[u];
+        for(size_t j = GC.offset[u]; j < GC.offset[u+1]; j++) {
+          NodeId v = GC.E[j].v;
+          NodeId v_og = contracted_to_og[v];
+          EdgeTy w = GC.E[j].w;
+          LogScore prev_edits = edit_scores[v_og];
+          LogScore new_edits = edit_scores[u_og] + w * ins_score;
+          cas_update<LogScore>(&edit_scores[v_og], prev_edits, new_edits);
+        }
+      });
+    }
+    for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {
+      parallel_for(GC.layerOffset[layer], GC.layerOffset[layer+1], [&](NodeId u){
+        NodeId u_og = contracted_to_og[u];
+        for(size_t j = GC.offset[u]; j < GC.offset[u+1]; j++) {
+          NodeId v = GC.in_E[j].v;
+          NodeId v_og = contracted_to_og[v];
+          EdgeTy w = GC.in_E[j].w;
+          LogScore prev_edits = edit_scores[u_og];
+          LogScore new_edits = edit_scores[v_og] + w * ins_score;
+          cas_update<LogScore>(&edit_scores[u_og], prev_edits, new_edits);
+        }
+      });
+    }
+  });
 }

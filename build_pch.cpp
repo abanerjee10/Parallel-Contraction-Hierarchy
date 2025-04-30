@@ -26,7 +26,8 @@ int main(int argc, char *argv[]) {
   int degree_bound = 0;
   bool degree_bounded = false, print_detail = false, write_ch = false;
   double sample_bound = 1;
-  while ((c = getopt(argc, argv, "i:o:p:s:t:q:b:d")) != -1) {
+  EdgeTy k_value = std::numeric_limits<EdgeTy>::max();
+  while ((c = getopt(argc, argv, "i:o:p:s:t:q:b:dk:")) != -1) {
     switch (c) {
       case 'i':
         INPUT_FILEPATH = optarg;
@@ -74,6 +75,13 @@ int main(int argc, char *argv[]) {
       case 'd':
         print_detail = true;
         break;
+      case 'k':
+        k_value = atof(optarg);  // Parse k as a floating point value (EdgeTy is assumed to be a float/double)
+        if (k_value < 0) {
+          fprintf(stderr, "Error: k (shortcut weight bound) must be non-negative\n");
+          exit(EXIT_FAILURE);
+        }
+      break;
       default:
         fprintf(stderr, "Error: Unknown option %c\n", optopt);
         exit(EXIT_FAILURE);
@@ -81,7 +89,7 @@ int main(int argc, char *argv[]) {
   }
   Graph origin_graph = read_graph(INPUT_FILEPATH);
   PCH *solver =
-      new PCH(origin_graph, max_pop_count, degree_bounded, degree_bound, sample_bound, print_detail);
+      new PCH(origin_graph, max_pop_count, degree_bounded, degree_bound, sample_bound, k_value, print_detail);
   PchGraph contracted_graph = solver->createContractionHierarchy();
   delete (solver);
   PchQuery query(contracted_graph, origin_graph);

@@ -92,7 +92,7 @@ void PchGraph::write_pch_format(char *const filename) {
   ofs.write(reinterpret_cast<char *>(E.begin()), sizeof(Edge) * m);
   ofs.write(reinterpret_cast<char *>(in_offset.begin()),
             sizeof(EdgeId) * (n + 1));
-  ofs.write(reinterpret_cast<char *>(in_E.begin()), sizeof(Edge) * m);
+  ofs.write(reinterpret_cast<char *>(in_E.begin()), sizeof(Edge) * rm);
   assert(level.size() == n);
   ofs.write(reinterpret_cast<char *>(level.begin()), sizeof(NodeId) * n);
   assert(rank.size() == n);
@@ -122,7 +122,7 @@ void PchGraph::read_pch_format(char *const filename) {
   ifs.read(reinterpret_cast<char *>(E.begin()), sizeof(Edge) * m);
   ifs.read(reinterpret_cast<char *>(in_offset.begin()),
            sizeof(EdgeId) * (n + 1));
-  ifs.read(reinterpret_cast<char *>(in_E.begin()), sizeof(Edge) * m);
+  ifs.read(reinterpret_cast<char *>(in_E.begin()), sizeof(Edge) * rm);
   assert(level.size() == n);
   ifs.read(reinterpret_cast<char *>(level.begin()), sizeof(NodeId) * n);
   assert(rank.size() == n);

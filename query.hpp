@@ -404,7 +404,7 @@ void PchQuery::insertionCharQueryLayerParallelization(int ins_score, LogScore* e
     }
     for (NodeId u = GC.layerOffset[GC.ccOffset[cc+1]]; u-- > GC.layerOffset[GC.ccOffset[cc]]; ) {
       NodeId u_og = contracted_to_og[u];
-      parallel_for(GC.offset[u], GC.offset[u + 1], [&](NodeId j) {
+      parallel_for(GC.in_offset[u], GC.in_offset[u + 1], [&](NodeId j) {
         NodeId v = GC.in_E[j].v;
         NodeId v_og = contracted_to_og[v];
         EdgeTy w = GC.in_E[j].w;
@@ -436,7 +436,7 @@ void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* 
     for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {
       parallel_for(GC.layerOffset[layer], GC.layerOffset[layer+1], [&](NodeId u){
         NodeId u_og = contracted_to_og[u];
-        for(size_t j = GC.offset[u]; j < GC.offset[u+1]; j++) {
+        for(size_t j = GC.in_offset[u]; j < GC.in_offset[u+1]; j++) {
           NodeId v = GC.in_E[j].v;
           NodeId v_og = contracted_to_og[v];
           EdgeTy w = GC.in_E[j].w;

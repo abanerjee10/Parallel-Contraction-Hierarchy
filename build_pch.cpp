@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
   bool degree_bounded = false, print_detail = false, write_ch = false;
   double sample_bound = 1;
   EdgeTy k_value = std::numeric_limits<EdgeTy>::max();
-  std::vector<std::string> vertex_labels = {};
+  std::vector<size_t> vertex_labels = {};
   while ((c = getopt(argc, argv, "i:o:p:s:t:q:b:dk:v:")) != -1) {
     switch (c) {
       case 'i':
@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
           exit(EXIT_FAILURE);
         }
       case 'v':
-        VERTEX_LABELS_FILEPATH = optarg;
+        LABEL_OFFSETS_FILEPATH = optarg;
         break;
       break;
       default:
@@ -93,16 +93,19 @@ int main(int argc, char *argv[]) {
   }
   Graph origin_graph = read_graph(INPUT_FILEPATH);
 
-  std::ifstream labels_file(VERTEX_LABELS_FILEPATH);  // Open the file for reading
-  if (!labels_file) {
-      std::cerr << "Error opening vertex labels file." << std::endl;
-  } else {
-      std::string label;
-      while (labels_file >> label) { // Read space-separated sequences as single strings
-          vertex_labels.push_back(label);
-      }
-      labels_file.close();
+  if (LABEL_OFFSETS_FILEPATH != nullptr) {
+    std::ifstream label_offsets_file(LABEL_OFFSETS_FILEPATH);  // Open the file for reading
+    if (!label_offsets_file) {
+        std::cerr << "Error opening vertex labels file." << std::endl;
+    } else {
+        size_t label_offset;
+        while (label_offsets_file >> label_offset) { // Read space-separated sequences as single strings
+            vertex_labels.push_back(label_offset);
+        }
+        label_offsets_file.close();
+    }
   }
+
 
   PCH *solver =
       new PCH(origin_graph, max_pop_count, degree_bounded, degree_bound, sample_bound, k_value, print_detail, vertex_labels);

@@ -47,6 +47,8 @@ struct PchQuery {
   void insertionCharQueryComponentParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og);
   template<typename LogScore>
   void insertionCharQueryNestedParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og);
+  template<typename LogScore>
+  void insertionCharQueryNestedParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets);
   // for testing
   void make_inverse();
 };
@@ -375,7 +377,7 @@ void PchQuery::insertionCharQueryComponentParallelization(int ins_score, LogScor
         edit_scores[v_og] = std::min(edit_scores[v_og], edit_scores[u_og] + w * ins_score);
       }
     }
-    for (NodeId u = GC.layerOffset[GC.ccOffset[cc+1]]; u-- > GC.layerOffset[GC.ccOffset[cc]]; ) {
+    for (NodeId u = GC.layerOffset[GC.ccOffset[cc+1]]-1; u+1 >= GC.layerOffset[GC.ccOffset[cc]]+1; u--) {  // +1 to avoid overflow of unsigned negative 1
       NodeId u_og = contracted_to_og[u];
       for (size_t j = GC.in_offset[u]; j < GC.in_offset[u + 1]; j++) {
         NodeId v = GC.in_E[j].v;
@@ -404,7 +406,7 @@ void PchQuery::insertionCharQueryLayerParallelization(int ins_score, LogScore* e
         }
       });
     }
-    for(size_t layer = GC.ccOffset[cc+1]; layer-- > GC.ccOffset[cc+1];) {
+    for(size_t layer = GC.ccOffset[cc+1]-1; layer+1 >= GC.ccOffset[cc]+1; layer--) { // +1 to avoid overflow of unsigned negative 1
       parallel_for(GC.layerOffset[layer], GC.layerOffset[layer+1], [&](NodeId u){
         NodeId u_og = contracted_to_og[u];
         for(size_t j = GC.in_offset[u]; j < GC.in_offset[u+1]; j++) {
@@ -437,12 +439,47 @@ void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* 
         }
       });
     }
-    for(size_t layer = GC.ccOffset[cc+1]; layer-- > GC.ccOffset[cc+1];) {
+    for(size_t layer = GC.ccOffset[cc+1]-1; layer+1 >= GC.ccOffset[cc]+1; layer--) { // +1 to avoid overflow of unsigned negative 1
       parallel_for(GC.layerOffset[layer], GC.layerOffset[layer+1], [&](NodeId u){
         NodeId u_og = contracted_to_og[u];
         for(size_t j = GC.in_offset[u]; j < GC.in_offset[u+1]; j++) {
           NodeId v = GC.in_E[j].v;
           NodeId v_og = contracted_to_og[v];
+          EdgeTy w = GC.in_E[j].w;
+          LogScore prev_edits = edit_scores[u_og];
+          LogScore new_edits = edit_scores[v_og] + w * ins_score;
+          cas_update<LogScore>(&edit_scores[u_og], prev_edits, new_edits);
+        }
+      });
+    }
+  });
+}
+
+template<typename LogScore>
+void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) {
+  // there are GC.ccOffset.size()-1 connected components
+  parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
+    for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {
+      parallel_for(GC.layerOffset[layer], GC.layerOffset[layer+1], [&](NodeId u){
+        NodeId u_og = vertex_label_offsets[contracted_to_og[u]+1]-1; // last label
+        for(size_t j = GC.offset[u]; j < GC.offset[u+1]; j++) {
+          NodeId v = GC.E[j].v;
+          NodeId v_og = vertex_label_offsets[contracted_to_og[v]]; // first label
+          EdgeTy w = GC.E[j].w;
+          LogScore prev_edits = edit_scores[v_og];
+          LogScore new_edits = edit_scores[u_og] + w * ins_score;
+          cas_update<LogScore>(&edit_scores[v_og], prev_edits, new_edits);
+        }
+      });
+    }
+    for(size_t layer = GC.ccOffset[cc+1]-1; layer+1 >= GC.ccOffset[cc]+1; layer--) { // +1 to avoid overflow of unsigned negative 1
+      parallel_for(GC.layerOffset[layer], GC.layerOffset[layer+1], [&](NodeId u){
+        NodeId u_og = vertex_label_offsets[contracted_to_og[u]]; // first label
+        if(contracted_to_og[u] == 4) {
+        }
+        for(size_t j = GC.in_offset[u]; j < GC.in_offset[u+1]; j++) {
+          NodeId v = GC.in_E[j].v;
+          NodeId v_og = vertex_label_offsets[contracted_to_og[v]+1]-1; // last label
           EdgeTy w = GC.in_E[j].w;
           LogScore prev_edits = edit_scores[u_og];
           LogScore new_edits = edit_scores[v_og] + w * ins_score;

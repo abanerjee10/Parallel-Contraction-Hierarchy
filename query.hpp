@@ -42,13 +42,14 @@ struct PchQuery {
   pair<EdgeTy, int> stQuery(NodeId s, NodeId t);
   sequence<EdgeTy> ssspQuery(NodeId s, bool remap, bool in_parallel);
   template<typename LogScore>
-  void insertionCharQueryLayerParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og);
+  void insertionCharQueryLayerParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og);
   template<typename LogScore>
-  void insertionCharQueryComponentParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og);
+  void insertionCharQueryComponentParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og);
   template<typename LogScore>
-  void insertionCharQueryNestedParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og);
+  void insertionCharQueryNestedParallelization(int ins_score, LogScore* 
+  const edit_scores, sequence<NodeId> &contracted_to_og);
   template<typename LogScore>
-  void insertionCharQueryNestedParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets);
+  void insertionCharQueryNestedParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets);
   // for testing
   void make_inverse();
 };
@@ -364,7 +365,7 @@ sequence<EdgeTy> PchQuery::ssspQuery(NodeId s, bool remap = true,
 }
 
 template<typename LogScore>
-void PchQuery::insertionCharQueryComponentParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og) {
+void PchQuery::insertionCharQueryComponentParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og) {
   // there are GC.ccOffset.size()-1 connected components
   parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
     // ascending through every node u in a component and ignoring layer offsets within a component
@@ -390,7 +391,7 @@ void PchQuery::insertionCharQueryComponentParallelization(int ins_score, LogScor
 }
 
 template<typename LogScore>
-void PchQuery::insertionCharQueryLayerParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og) {
+void PchQuery::insertionCharQueryLayerParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og) {
   // there are GC.ccOffset.size()-1 connected components
   for(NodeId cc = 0; cc < GC.ccOffset.size()-1; cc++) {
     for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {
@@ -423,7 +424,7 @@ void PchQuery::insertionCharQueryLayerParallelization(int ins_score, LogScore* e
 }
 
 template<typename LogScore>
-void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og) {
+void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og) {
   // there are GC.ccOffset.size()-1 connected components
   parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
     for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {
@@ -456,7 +457,7 @@ void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* 
 }
 
 template<typename LogScore>
-void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* edit_scores, sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) {
+void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) {
   // there are GC.ccOffset.size()-1 connected components
   parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
     for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {

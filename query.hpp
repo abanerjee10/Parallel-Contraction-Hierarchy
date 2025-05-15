@@ -42,14 +42,14 @@ struct PchQuery {
   pair<EdgeTy, int> stQuery(NodeId s, NodeId t);
   sequence<EdgeTy> ssspQuery(NodeId s, bool remap, bool in_parallel);
   template<typename LogScore>
-  void insertionCharQueryLayerParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og);
+  void insertionQueryLayerParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og) const;
   template<typename LogScore>
-  void insertionCharQueryComponentParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og);
+  void insertionQueryComponentParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og) const;
   template<typename LogScore>
-  void insertionCharQueryNestedParallelization(int ins_score, LogScore* 
-  const edit_scores, sequence<NodeId> &contracted_to_og);
+  void insertionQueryNestedParallelization(const int ins_score, LogScore* 
+  const edit_scores, const sequence<NodeId> &contracted_to_og) const;
   template<typename LogScore>
-  void insertionCharQueryNestedParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets);
+  void insertionQueryNestedParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) const;
   // for testing
   void make_inverse();
 };
@@ -365,7 +365,7 @@ sequence<EdgeTy> PchQuery::ssspQuery(NodeId s, bool remap = true,
 }
 
 template<typename LogScore>
-void PchQuery::insertionCharQueryComponentParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og) {
+void PchQuery::insertionQueryComponentParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og) const {
   // there are GC.ccOffset.size()-1 connected components
   parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
     // ascending through every node u in a component and ignoring layer offsets within a component
@@ -391,7 +391,7 @@ void PchQuery::insertionCharQueryComponentParallelization(int ins_score, LogScor
 }
 
 template<typename LogScore>
-void PchQuery::insertionCharQueryLayerParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og) {
+void PchQuery::insertionQueryLayerParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og) const {
   // there are GC.ccOffset.size()-1 connected components
   for(NodeId cc = 0; cc < GC.ccOffset.size()-1; cc++) {
     for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {
@@ -424,7 +424,7 @@ void PchQuery::insertionCharQueryLayerParallelization(int ins_score, LogScore* c
 }
 
 template<typename LogScore>
-void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og) {
+void PchQuery::insertionQueryNestedParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og) const {
   // there are GC.ccOffset.size()-1 connected components
   parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
     for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {
@@ -457,7 +457,7 @@ void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* 
 }
 
 template<typename LogScore>
-void PchQuery::insertionCharQueryNestedParallelization(int ins_score, LogScore* const edit_scores, sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) {
+void PchQuery::insertionQueryNestedParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) const {
   // there are GC.ccOffset.size()-1 connected components
   parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
     for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {

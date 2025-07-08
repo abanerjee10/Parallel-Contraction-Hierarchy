@@ -49,7 +49,7 @@ struct PCH {
   hashbag<uint64_t> bag;
   sequence<uint64_t> neighbors;
   EdgeTy k; // maximum allowed weight: only paths of length <=k are preserved
-  std::vector<size_t> vertex_labels;
+  std::vector<size_t> label_lengths;
 
   // helper func
   bool check_edge_valid(size_t idx, NodeId v, bool in_csr);
@@ -86,7 +86,7 @@ struct PCH {
   PchGraph createContractionHierarchy();
   PCH(Graph &_G_in, int _max_pop_count = 500, bool _degree_ordering = false,
       NodeId _g_degree_bound = 30, double _g_sample_bound = 0.05, EdgeTy _k = std::numeric_limits<EdgeTy>::max(),
-      bool _print_detail = false, std::vector<size_t> _vertex_labels = {})
+      bool _print_detail = false, std::vector<size_t> _label_lengths = {})
       : degree_ordering(_degree_ordering),
         g_degree_bound(_g_degree_bound),
         g_max_pop_count(_max_pop_count),
@@ -103,7 +103,7 @@ struct PCH {
         neighbors(5 * _G_in.n),
         G_in(_G_in),
         print_detail(_print_detail),
-        vertex_labels(_vertex_labels) {}
+        label_lengths(_label_lengths) {}
 };
 
 bool PCH::check_edge_valid([[maybe_unused]] size_t idx, NodeId v, bool in_csr) {
@@ -333,7 +333,7 @@ void PCH::pruneNeighbors(NodeId s) {
       NodeId v = G.E[i].v;
       if (s == v || vertices_contracted[v]) continue;
       EdgeTy ne = d + G.E[i].w;
-      if(!vertex_labels.empty()) ne += vertex_labels[u]-1;
+      if(!label_lengths.empty()) ne += label_lengths[u]-1;
       if (dist.find(v) == dist.end() || dist[v] > ne) {
         dist[v] = ne;
         pq.push({ne, v});
@@ -356,7 +356,7 @@ void PCH::pruneNeighbors(NodeId s) {
             continue;
           }
           EdgeTy ne = d + newly_inserted_out_edges_hash.H[index].value.second;
-          if(!vertex_labels.empty()) ne += vertex_labels[u]-1;
+          if(!label_lengths.empty()) ne += label_lengths[u]-1;
           if (dist.find(v) == dist.end() || dist[v] > ne) {
             dist[v] = ne;
             pq.push({ne, v});
@@ -414,7 +414,7 @@ bool PCH::calScore() {
         if (in_idx[k1] != out_idx[k2]) {
           pair<NodeId, NodeId> nw = make_pair(in_idx[k1], out_idx[k2]);
           EdgeTy total_weight = in_wgh[k1] + out_wgh[k2];
-          if(!vertex_labels.empty()) total_weight += vertex_labels[u]-1;
+          if(!label_lengths.empty()) total_weight += label_lengths[u]-1;
           if (/*total_weight <= k && */vertices_around_hash.find(nw) > total_weight) {
             vertices_around_hash.insert(nw, total_weight);
           }
@@ -453,7 +453,7 @@ bool PCH::calScore() {
           if (in_idx[k1] != out_idx[k2]) {
             pair<NodeId, NodeId> nw = make_pair(in_idx[k1], out_idx[k2]);
             EdgeTy total_weight = in_wgh[k1] + out_wgh[k2];
-            if(!vertex_labels.empty()) total_weight += vertex_labels[u]-1;
+            if(!label_lengths.empty()) total_weight += label_lengths[u]-1;
             assert(vertices_around_hash.find(nw) <= total_weight);
             if (total_weight <= k && vertices_around_hash.find(nw) == total_weight) {
               ++added_arc_num;
@@ -1027,7 +1027,7 @@ void PCH::buildContractionHierarchy() {
             pair<NodeId, NodeId> nw = make_pair(in_idx[k1], out_idx[k2]);
             EdgeTy tentative_dist = vertices_around_hash.find(nw);
             EdgeTy total_weight = in_wgh[k1] + out_wgh[k2];
-            if(!vertex_labels.empty()) total_weight += vertex_labels[u]-1;
+            if(!label_lengths.empty()) total_weight += label_lengths[u]-1;
             if (total_weight <= k && tentative_dist >= total_weight) {
               insertHelper(in_idx[k1], out_idx[k2], total_weight,
                            in_hop[k1] + out_hop[k2]);

@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
   bool degree_bounded = false, print_detail = false, write_ch = false;
   double sample_bound = 1;
   EdgeTy k_value = std::numeric_limits<EdgeTy>::max();
-  std::vector<size_t> vertex_labels = {};
+  std::vector<size_t> vertex_label_offsets = {};
   while ((c = getopt(argc, argv, "i:o:p:s:t:q:b:dk:v:")) != -1) {
     switch (c) {
       case 'i':
@@ -100,17 +100,30 @@ int main(int argc, char *argv[]) {
     } else {
         size_t label_offset;
         while (label_offsets_file >> label_offset) { // Read space-separated sequences as single strings
-            vertex_labels.push_back(label_offset);
+            vertex_label_offsets.push_back(label_offset);
         }
         label_offsets_file.close();
     }
   }
+  std::vector<size_t> label_lengths;
+  if (!vertex_label_offsets.empty()) {
+      label_lengths.reserve(vertex_label_offsets.size() - 1); // Reserve for efficiency
+      for (size_t i = 1; i < vertex_label_offsets.size(); ++i) {
+          label_lengths.push_back(vertex_label_offsets[i] - vertex_label_offsets[i - 1]);
+      }
+  }
 
 
   PCH *solver =
-      new PCH(origin_graph, max_pop_count, degree_bounded, degree_bound, sample_bound, k_value, print_detail, vertex_labels);
+      new PCH(origin_graph, max_pop_count, degree_bounded, degree_bound, sample_bound, k_value, print_detail, label_lengths);
   PchGraph contracted_graph = solver->createContractionHierarchy();
   delete (solver);
+  if(!label_lengths.empty() && 1 < *std::max_element(label_lengths.begin(), label_lengths.end())) {
+    printf("skipping queries because of string labels longer than one character\n");
+    bidirect_verify_num=0;
+    sssp_verify_num=0;
+  }
+
   PchQuery query(contracted_graph, origin_graph);
   ofstream ofs("pch.tsv", ios::app);
   ofs << fixed << setprecision(6);

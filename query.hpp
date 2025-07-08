@@ -54,6 +54,20 @@ struct PchQuery {
   const edit_scores, const sequence<NodeId> &contracted_to_og) const;
   template<typename LogScore>
   void insertionQueryNestedParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) const;
+  template<typename LogScore>
+  void insertionQueryAsyncParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og) const;
+  template<typename LogScore>
+  void insertionQueryAsyncTreeForwardParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets, const NodeId &node) const;
+  template<typename LogScore>
+  void insertionQueryAsyncTreeBackwardParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets, const NodeId &node) const;
+  template<typename LogScore>
+  void insertionQueryAsyncTreeForwardParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const NodeId &node) const;
+  template<typename LogScore>
+  void insertionQueryAsyncTreeBackwardParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const NodeId &node) const;  
+  template<typename LogScore>
+  void insertionQueryAsyncParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) const;
+  template<typename LogScore>
+  void insertionQueryAsyncParallelizationReference(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) const;
   // for testing
   void make_inverse();
 };
@@ -554,6 +568,207 @@ void PchQuery::insertionQueryNestedParallelization(const int ins_score, LogScore
           LogScore prev_edits = edit_scores[u_og];
           LogScore new_edits = edit_scores[v_og] + w * ins_score;
           cas_update<LogScore>(&edit_scores[u_og], prev_edits, new_edits);
+        }
+      });
+    }
+  });
+}
+
+template<typename LogScore>
+void PchQuery::insertionQueryAsyncTreeForwardParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const NodeId &root) const {
+  //NodeId u_og = vertex_label_offsets[contracted_to_og[u]+1]-1; // last label
+  NodeId u_og = contracted_to_og[root]; // first label on destination node
+  size_t start = GC.offset[root];
+  size_t end   = GC.offset[root+1];
+  size_t mid   = start + (end - start) / 2;
+
+  parlay::par_do(
+    [&]() {
+      for (size_t j = start; j < mid; j++) {
+        // Process the first half of the range [start, mid)
+        insertionQueryAsyncTreeForwardParallelization(ins_score, edit_scores, contracted_to_og, GC.E[j].v);
+      }
+    },
+    [&]() {
+      for (size_t j = mid; j < end; j++) {
+        // Process the second half of the range [mid, end)
+        insertionQueryAsyncTreeForwardParallelization(ins_score, edit_scores, contracted_to_og, GC.E[j].v);
+      }
+    }
+  );
+  for(size_t j = start; j < end; j++) {
+      NodeId v = GC.E[j].v;
+      //NodeId v_og = vertex_label_offsets[contracted_to_og[v]]; // first label
+      NodeId v_og = contracted_to_og[v]; // last label on source node
+      EdgeTy w = GC.E[j].w;
+      //LogScore prev_edits = edit_scores[v_og];
+      LogScore prev_edits = edit_scores[u_og];
+      //LogScore new_edits = edit_scores[u_og] + w * ins_score;
+      LogScore new_edits = edit_scores[v_og] + w * ins_score;
+      //cas_update<LogScore>(&edit_scores[v_og], prev_edits, new_edits);
+      cas_update<LogScore>(&edit_scores[u_og], prev_edits, new_edits);
+  }
+}
+
+template<typename LogScore>
+void PchQuery::insertionQueryAsyncTreeBackwardParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const NodeId &root) const {
+  NodeId u_og = contracted_to_og[root]; // last label on source node
+  size_t start = GC.in_offset[root];
+  size_t end   = GC.in_offset[root+1];
+  size_t mid   = start + (end - start) / 2;
+  for(size_t j = start; j < end; j++) {
+      NodeId v = GC.in_E[j].v;
+      NodeId v_og = contracted_to_og[v]; // first label on destination node
+      EdgeTy w = GC.in_E[j].w;
+      LogScore prev_edits = edit_scores[v_og];
+      LogScore new_edits = edit_scores[u_og] + w * ins_score;
+      cas_update<LogScore>(&edit_scores[v_og], prev_edits, new_edits);
+  }
+  parlay::par_do(
+    [&]() {
+      for (size_t j = start; j < mid; j++) {
+        // Process the first half of the range [start, mid)
+        insertionQueryAsyncTreeBackwardParallelization(ins_score, edit_scores, contracted_to_og, GC.in_E[j].v);
+      }
+    },
+    [&]() {
+      for (size_t j = mid; j < end; j++) {
+        // Process the second half of the range [mid, end)
+        insertionQueryAsyncTreeBackwardParallelization(ins_score, edit_scores, contracted_to_og, GC.in_E[j].v);
+      }
+    }
+  );
+}
+
+template<typename LogScore>
+void PchQuery::insertionQueryAsyncParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og) const {
+  // there are GC.ccOffset.size()-1 connected components
+  parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
+    // GC.ccOffset[cc+1]-1 is last layer
+    NodeId root = GC.layerOffset[GC.ccOffset[cc+1]-1];
+    insertionQueryAsyncTreeForwardParallelization(ins_score, edit_scores, contracted_to_og, root);
+  });
+  parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
+    // GC.ccOffset[cc+1]-1 is last layer
+    NodeId root = GC.layerOffset[GC.ccOffset[cc+1]-1];
+    insertionQueryAsyncTreeBackwardParallelization(ins_score, edit_scores, contracted_to_og, root);
+  });
+}
+
+template<typename LogScore>
+void PchQuery::insertionQueryAsyncTreeForwardParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets, const NodeId &root) const {
+  //NodeId u_og = vertex_label_offsets[contracted_to_og[u]+1]-1; // last label
+  NodeId u_og = vertex_label_offsets[contracted_to_og[root]]; // first label on destination node
+  size_t start = GC.offset[root];
+  size_t end   = GC.offset[root+1];
+  size_t mid   = start + (end - start) / 2;
+
+  parlay::par_do(
+    [&]() {
+      for (size_t j = start; j < mid; j++) {
+        // Process the first half of the range [start, mid)
+        insertionQueryAsyncTreeForwardParallelization(ins_score, edit_scores, contracted_to_og, vertex_label_offsets, GC.E[j].v);
+      }
+    },
+    [&]() {
+      for (size_t j = mid; j < end; j++) {
+        // Process the second half of the range [mid, end)
+        insertionQueryAsyncTreeForwardParallelization(ins_score, edit_scores, contracted_to_og, vertex_label_offsets, GC.E[j].v);
+      }
+    }
+  );
+  for(size_t j = start; j < end; j++) {
+      NodeId v = GC.E[j].v;
+      //NodeId v_og = vertex_label_offsets[contracted_to_og[v]]; // first label
+      NodeId v_og = vertex_label_offsets[contracted_to_og[v]+1]-1; // last label on source node
+      EdgeTy w = GC.E[j].w;
+      //LogScore prev_edits = edit_scores[v_og];
+      LogScore prev_edits = edit_scores[u_og];
+      //LogScore new_edits = edit_scores[u_og] + w * ins_score;
+      LogScore new_edits = edit_scores[v_og] + w * ins_score;
+      //cas_update<LogScore>(&edit_scores[v_og], prev_edits, new_edits);
+      cas_update<LogScore>(&edit_scores[u_og], prev_edits, new_edits);
+  }
+}
+
+template<typename LogScore>
+void PchQuery::insertionQueryAsyncTreeBackwardParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets, const NodeId &root) const {
+  NodeId u_og = vertex_label_offsets[contracted_to_og[root]+1]-1; // last label on source node
+  size_t start = GC.in_offset[root];
+  size_t end   = GC.in_offset[root+1];
+  size_t mid   = start + (end - start) / 2;
+  for(size_t j = start; j < end; j++) {
+      NodeId v = GC.in_E[j].v;
+      NodeId v_og = vertex_label_offsets[contracted_to_og[v]]; // first label on destination node
+      EdgeTy w = GC.in_E[j].w;
+      LogScore prev_edits = edit_scores[v_og];
+      LogScore new_edits = edit_scores[u_og] + w * ins_score;
+      cas_update<LogScore>(&edit_scores[v_og], prev_edits, new_edits);
+  }
+  parlay::par_do(
+    [&]() {
+      for (size_t j = start; j < mid; j++) {
+        // Process the first half of the range [start, mid)
+        insertionQueryAsyncTreeBackwardParallelization(ins_score, edit_scores, contracted_to_og, vertex_label_offsets, GC.in_E[j].v);
+      }
+    },
+    [&]() {
+      for (size_t j = mid; j < end; j++) {
+        // Process the second half of the range [mid, end)
+        insertionQueryAsyncTreeBackwardParallelization(ins_score, edit_scores, contracted_to_og, vertex_label_offsets, GC.in_E[j].v);
+      }
+    }
+  );
+}
+
+template<typename LogScore>
+void PchQuery::insertionQueryAsyncParallelization(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) const {
+  // there are GC.ccOffset.size()-1 connected components
+  parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
+    // GC.ccOffset[cc+1]-1 is last layer
+    NodeId root = GC.layerOffset[GC.ccOffset[cc+1]-1];
+    insertionQueryAsyncTreeForwardParallelization(ins_score, edit_scores, contracted_to_og, vertex_label_offsets, root);
+  });
+  parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
+    // GC.ccOffset[cc+1]-1 is last layer
+    NodeId root = GC.layerOffset[GC.ccOffset[cc+1]-1];
+    insertionQueryAsyncTreeBackwardParallelization(ins_score, edit_scores, contracted_to_og, vertex_label_offsets, root);
+  });
+}
+
+template<typename LogScore>
+void PchQuery::insertionQueryAsyncParallelizationReference(const int ins_score, LogScore* const edit_scores, const sequence<NodeId> &contracted_to_og, const std::vector<size_t> &vertex_label_offsets) const {
+  printf("Using string async reference instead of string async\n");
+  // there are GC.ccOffset.size()-1 connected components
+  parallel_for(0, GC.ccOffset.size()-1, [&](NodeId cc) {
+    for(size_t layer = GC.ccOffset[cc]; layer < GC.ccOffset[cc+1]; layer++) {
+      parallel_for(GC.layerOffset[layer], GC.layerOffset[layer+1], [&](NodeId u){ // forward edges have been reversed so that destination nodes are u and source nodes are v
+        //NodeId u_og = vertex_label_offsets[contracted_to_og[u]+1]-1; // last label
+        NodeId u_og = vertex_label_offsets[contracted_to_og[u]]; // first label on destination node
+        for(size_t j = GC.offset[u]; j < GC.offset[u+1]; j++) {
+          NodeId v = GC.E[j].v;
+          //NodeId v_og = vertex_label_offsets[contracted_to_og[v]]; // first label
+          NodeId v_og = vertex_label_offsets[contracted_to_og[v]+1]-1; // last label on source node
+          EdgeTy w = GC.E[j].w;
+          //LogScore prev_edits = edit_scores[v_og];
+          LogScore prev_edits = edit_scores[u_og];
+          //LogScore new_edits = edit_scores[u_og] + w * ins_score;
+          LogScore new_edits = edit_scores[v_og] + w * ins_score;
+          //cas_update<LogScore>(&edit_scores[v_og], prev_edits, new_edits);
+          cas_update<LogScore>(&edit_scores[u_og], prev_edits, new_edits);
+        }
+      });
+    }
+    for(size_t layer = GC.ccOffset[cc+1]-1; layer+1 >= GC.ccOffset[cc]+1; layer--) { // +1 to avoid overflow of unsigned negative 1
+      parallel_for(GC.layerOffset[layer], GC.layerOffset[layer+1], [&](NodeId u){ // backward edges have been reversed so that source nodes are u and destination nodes are v
+        NodeId u_og = vertex_label_offsets[contracted_to_og[u]+1]-1; // last label on source node
+        for(size_t j = GC.in_offset[u]; j < GC.in_offset[u+1]; j++) {
+          NodeId v = GC.in_E[j].v;
+          NodeId v_og = vertex_label_offsets[contracted_to_og[v]]; // first label on destination node
+          EdgeTy w = GC.in_E[j].w;
+          LogScore prev_edits = edit_scores[v_og];
+          LogScore new_edits = edit_scores[u_og] + w * ins_score;
+          cas_update<LogScore>(&edit_scores[v_og], prev_edits, new_edits);
         }
       });
     }
